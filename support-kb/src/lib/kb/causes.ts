@@ -69,19 +69,20 @@ export function groupByCause(reports: Report[], tenantOf: (r: Report) => Tenant 
     const cause = causeOf(r, tenantOf(r)) ?? 'unplaced';
     byCause.set(cause, [...(byCause.get(cause) ?? []), r]);
   }
-  return [...byCause.entries()].map(([cause, rs]) => ({ cause, ...summarize(rs) })).sort((a, b) => b.reports.length - a.reports.length);
-}
-
-function summarize(rs: Report[]): Omit<CauseGroup, 'cause'> {
-  const days = rs.map((r) => r.receivedAt.slice(0, 10)).sort();
-  return {
-    reports: rs,
-    taggedAs: rs.reduce<Record<string, number>>((n, r) => ({ ...n, [r.meta.intakeTag]: (n[r.meta.intakeTag] ?? 0) + 1 }), {}),
-    tenants: new Set(rs.map((r) => r.tenant)).size,
-    firstSeen: days[0],
-    lastSeen: days[days.length - 1],
-    mergedInto: [...new Set(rs.flatMap((r) => (r.mergedInto ? [r.mergedInto] : [])))],
-  };
+  return [...byCause.entries()]
+    .map(([cause, rs]) => {
+      const days = rs.map((r) => r.receivedAt.slice(0, 10)).sort();
+      return {
+        cause,
+        reports: rs,
+        taggedAs: rs.reduce<Record<string, number>>((n, r) => ({ ...n, [r.meta.intakeTag]: (n[r.meta.intakeTag] ?? 0) + 1 }), {}),
+        tenants: new Set(rs.map((r) => r.tenant)).size,
+        firstSeen: days[0],
+        lastSeen: days[days.length - 1],
+        mergedInto: [...new Set(rs.flatMap((r) => (r.mergedInto ? [r.mergedInto] : [])))],
+      };
+    })
+    .sort((a, b) => b.reports.length - a.reports.length);
 }
 
 // A ticket is the cause most of its reports share; the rest were merged into the wrong place.
@@ -93,25 +94,4 @@ export function ticketCause(groups: CauseGroup[], ticket: number): CauseGroup['c
 // footnoted under it.
 export function readAs(g: CauseGroup, ids: readonly string[]): number {
   return g.reports.filter((r) => ids.includes(r.id)).length;
-}
-
-// A problem is what the report shows, not only where it came from. A flipped month is `parser` or
-// `hint`, by tenant and form. A booking moved by one day (desk-notes.json `oneDayMove`) flips
-// nothing: no day-first or month-first reading turns 12 May into 11 May. That is `shift`, its own bug.
-export type Problem = Cause | 'shift';
-export const PROBLEMS: readonly Problem[] = ['parser', 'hint', 'shift'];
-
-export function problemOf(r: Pick<Report, 'id' | 'channel'>, t: Tenant | undefined, shifted: readonly string[]): Problem | null {
-  return shifted.includes(r.id) ? 'shift' : causeOf(r, t);
-}
-
-export type ProblemGroup = Omit<CauseGroup, 'cause'> & { problem: Problem | 'unplaced' };
-
-export function groupByProblem(reports: Report[], tenantOf: (r: Report) => Tenant | undefined, shifted: readonly string[]): ProblemGroup[] {
-  const byProblem = new Map<ProblemGroup['problem'], Report[]>();
-  for (const r of reports) {
-    const problem = problemOf(r, tenantOf(r), shifted) ?? 'unplaced';
-    byProblem.set(problem, [...(byProblem.get(problem) ?? []), r]);
-  }
-  return [...byProblem.entries()].map(([problem, rs]) => ({ problem, ...summarize(rs) })).sort((a, b) => b.reports.length - a.reports.length);
 }
